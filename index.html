@@ -1,94 +1,25 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="SoundFinder - Discover your next favorite song with AI-powered recommendations" />
     <title>SoundFinder - Song Recommender</title>
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%231DB954'/><path d='M72.594 74.076a1.146 1.146 0 0 1-1.576.378c-4.336-2.652-9.743-4.08-16.057-4.08-4.14 0-7.93.54-11.26 1.5a1.146 1.146 0 0 1-.604-2.21c3.63-1.04 7.72-1.6 12.16-1.6 6.74 0 12.54 1.54 17.2 4.43a1.146 1.146 0 0 1 .378 1.576zm1.72-4.108a1.434 1.434 0 0 1-1.97.472c-4.94-3.034-12.49-4.67-18.34-4.67-5.28 0-9.88 1.08-13.68 2.56a1.434 1.434 0 1 1-1.04-2.67c4.18-1.63 9.14-2.82 14.9-2.82 6.38 0 14.44 1.76 19.84 5.08a1.434 1.434 0 0 1 .47 1.97zm.15-4.24c-5.94-3.53-15.84-4.86-21.6-4.86-6.28 0-11.68 1.36-15.94 3.1a1.716 1.716 0 0 1-.99-3.29c4.68-1.9 10.52-3.36 17.27-3.36 6.34 0 16.94 1.46 23.48 5.36a1.716 1.716 0 0 1-1.04 3.27z' fill='white'/></svg>" />
     <style>
-      /* 内联样式确保主题色立即生效，避免闪烁 */
-      html,
-      body {
+      html, body {
         margin: 0;
         padding: 0;
         width: 100%;
         height: 100%;
-      }
-      html.light,
-      html.light body {
-        background-color: #ffffff !important;
-        color: #000000;
-      }
-      html.dark,
-      html.dark body {
-        background-color: #1a1a1a !important;
+        background-color: #121212;
         color: #ffffff;
       }
     </style>
-    <script>
-      // 在 React 加载前立即设置主题，避免闪烁
-      (function () {
-        const isInIframe = window.self !== window.top;
-
-        function applyThemeToDOM(theme) {
-          document.documentElement.classList.remove("light", "dark");
-          document.documentElement.classList.add(theme);
-          document.documentElement.setAttribute("data-theme", theme);
-        }
-
-        if (isInIframe) {
-          // 监听父窗口主动推送的主题消息
-          window.addEventListener("message", function (event) {
-            if (event.data && typeof event.data.theme === "string") {
-              const theme = event.data.theme;
-              if (theme === "light" || theme === "dark") {
-                applyThemeToDOM(theme);
-              }
-            }
-          });
-        } else {
-          // 非 iframe 环境，使用默认 dark 主题
-          applyThemeToDOM("dark");
-        }
-      })();
-    </script>
-      <script>
-      (function () {
-        if (window.self === window.top) return;
-        var reported = {};
-        window.addEventListener("error", function (event) {
-          // 资源加载失败的 error 事件没有 message，此处仅上报 JS 运行时错误
-          if (!event || !event.message) return;
-          var key =
-            event.message + "|" + (event.filename || "") + "|" + (event.lineno || 0);
-          if (reported[key]) return; // 相同错误只上报一次，避免渲染循环刷屏
-          reported[key] = true;
-          try {
-            window.parent.postMessage(
-              {
-                type: "sandbox-runtime-error",
-                payload: {
-                  message: String(event.message).slice(0, 500),
-                  filename: event.filename || "",
-                  lineno: event.lineno || 0,
-                  colno: event.colno || 0,
-                  stack:
-                    event.error && event.error.stack
-                      ? String(event.error.stack).slice(0, 2000)
-                      : ""
-                }
-              },
-              "*"
-            );
-          } catch (e) {
-            /* 上报失败不影响页面运行 */
-          }
-        });
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -11,6 +11,7 @@ interface TrackCardProps {
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, index, isPlaying, onPlay, onAddToQueue }) => {
   const formatDuration = (ms: number) => {
+    if (!ms || ms <= 0) return '0:00';
     const seconds = Math.floor(ms / 1000);
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -18,13 +19,18 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, index, isPlaying, onPlay, 
   };
 
   const getArtworkUrl = (url: string, size: number = 300) => {
-    return url.replace('100x100', `${size}x${size}`);
+    if (!url) return '';
+    // iTunes artwork URLs contain the size like "100x100bb"
+    if (url.includes('100x100')) {
+      return url.replace('100x100', `${size}x${size}`);
+    }
+    return url;
   };
 
   return (
     <div
-      className="group flex items-center gap-4 p-3 rounded-lg hover:bg-white/5 transition-all cursor-pointer animate-fade-in-up"
-      style={{ animationDelay: `${index * 50}ms` }}
+      className="group flex items-center gap-3 sm:gap-4 p-2 sm:p-3 rounded-lg hover:bg-white/5 transition-all cursor-pointer animate-fade-in-up"
+      style={{ animationDelay: `${Math.min(index * 30, 500)}ms` }}
       onClick={() => onPlay(track)}
     >
       {/* Track number / Play indicator */}
@@ -45,7 +51,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, index, isPlaying, onPlay, 
       </div>
 
       {/* Album art */}
-      <div className="relative w-12 h-12 flex-shrink-0 rounded overflow-hidden shadow-lg">
+      <div className="relative w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded overflow-hidden shadow-lg">
         <img
           src={getArtworkUrl(track.artworkUrl100, 120)}
           alt={track.collectionName}
@@ -55,7 +61,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, index, isPlaying, onPlay, 
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
           {isPlaying && (
             <div className="w-full h-full bg-[#1DB954]/20 flex items-center justify-center">
-              <i className="fas fa-volume-up text-[#1DB954]"></i>
+              <i className="fas fa-volume-up text-[#1DB954] text-xs"></i>
             </div>
           )}
         </div>
@@ -70,14 +76,14 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, index, isPlaying, onPlay, 
       </div>
 
       {/* Genre tag */}
-      <div className="hidden md:block flex-shrink-0">
+      <div className="hidden lg:block flex-shrink-0">
         <span className="px-2 py-1 bg-white/5 rounded-full text-[10px] text-[#B3B3B3] font-medium">
           {track.primaryGenreName}
         </span>
       </div>
 
       {/* Duration */}
-      <span className="text-xs text-[#B3B3B3] flex-shrink-0 w-10 text-right">
+      <span className="text-xs text-[#B3B3B3] flex-shrink-0 w-10 text-right tabular-nums">
         {formatDuration(track.trackTimeMillis)}
       </span>
 
@@ -89,6 +95,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, index, isPlaying, onPlay, 
         }}
         className="opacity-0 group-hover:opacity-100 flex-shrink-0 w-8 h-8 flex items-center justify-center text-[#B3B3B3] hover:text-white hover:scale-110 transition-all"
         title="Add to queue"
+        aria-label="Add to queue"
       >
         <i className="fas fa-plus text-sm"></i>
       </button>

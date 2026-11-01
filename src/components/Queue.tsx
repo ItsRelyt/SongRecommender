@@ -19,14 +19,14 @@ const Queue: React.FC<QueueProps> = ({ queue, currentTrack, onRemoveFromQueue, o
         <span className="text-sm font-normal text-[#B3B3B3]">({queue.length} songs)</span>
       </h3>
       
-      <div className="space-y-1 max-h-80 overflow-y-auto">
+      <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
         {queue.map((track, index) => (
           <div
-            key={`${track.trackId}-${index}`}
+            key={`queue-${track.trackId}-${index}`}
             className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 group cursor-pointer transition-all"
             onClick={() => onPlayFromQueue(track)}
           >
-            <div className="w-6 text-center text-xs text-[#B3B3B3]">
+            <div className="w-6 text-center text-xs text-[#B3B3B3] flex-shrink-0">
               {currentTrack?.trackId === track.trackId ? (
                 <i className="fas fa-volume-up text-[#1DB954] text-xs"></i>
               ) : (
@@ -36,7 +36,7 @@ const Queue: React.FC<QueueProps> = ({ queue, currentTrack, onRemoveFromQueue, o
             <img
               src={track.artworkUrl100.replace('100x100', '60x60')}
               alt={track.collectionName}
-              className="w-10 h-10 rounded object-cover"
+              className="w-10 h-10 rounded object-cover flex-shrink-0"
             />
             <div className="flex-1 min-w-0">
               <p className={`text-sm truncate ${currentTrack?.trackId === track.trackId ? 'text-[#1DB954]' : 'text-white'}`}>
@@ -49,7 +49,8 @@ const Queue: React.FC<QueueProps> = ({ queue, currentTrack, onRemoveFromQueue, o
                 e.stopPropagation();
                 onRemoveFromQueue(index);
               }}
-              className="opacity-0 group-hover:opacity-100 text-[#B3B3B3] hover:text-red-400 transition-all"
+              className="opacity-0 group-hover:opacity-100 text-[#B3B3B3] hover:text-red-400 transition-all flex-shrink-0 w-6 h-6 flex items-center justify-center"
+              aria-label="Remove from queue"
             >
               <i className="fas fa-times text-xs"></i>
             </button>

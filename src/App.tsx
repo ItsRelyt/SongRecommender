@@ -1,340 +1,454 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import Header from './components/Header';
-import SearchBar from './components/SearchBar';
-import TrackCard from './components/TrackCard';
-import Player from './components/Player';
-import Queue from './components/Queue';
-import { GenreExplorer, HeroSection, StatsBar } from './components/Sections';
-import { Track, SearchState } from './types';
-import { searchTracks, getGenreTracks, getRecommendations } from './api';
+import { useState, useRef, useEffect, useCallback } from 'react';
+
+interface Track {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  art: string;
+  src: string;
+  duration: number;
+  genre: string;
+  link: string;
+}
 
 function App() {
-  const [searchState, setSearchState] = useState<SearchState>('idle');
-  const [searchResults, setSearchResults] = useState<Track[]>([]);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('jamendo_key') || '');
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [query, setQuery] = useState('');
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [recommendations, setRecommendations] = useState<Track[]>([]);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const [currentList, setCurrentList] = useState<'tracks' | 'recommendations'>('tracks');
+  const [currentIndex, setCurrentIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [queue, setQueue] = useState<Track[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+  const [status, setStatus] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showApiKeyInput, setShowApiKeyInput] = useState(!apiKey);
 
-  // Memoize all tracks for navigation
-  const allTracks = useMemo(() => {
-    const combined = [...searchResults];
-    // Add recommendations that aren't already in search results
-    const searchIds = new Set(searchResults.map(t => t.trackId));
-    for (const rec of recommendations) {
-      if (!searchIds.has(rec.trackId)) {
-        combined.push(rec);
-      }
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Format time
+  const fmt = (s: number) => {
+    if (!isFinite(s)) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // Search Jamendo
+  const searchJamendo = async (q: string): Promise<Track[]> => {
+    if (!apiKey) throw new Error('Please enter your Jamendo API key first');
+    
+    const url = `https://api.jamendo.com/v3.0/tracks/?client_id=${encodeURIComponent(apiKey)}` +
+      `&format=json&limit=50&include=musicinfo&audioformat=mp32&search=${encodeURIComponent(q)}`;
+    
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Search failed. Check your API key.');
+    
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) {
+      throw new Error('No results found');
     }
-    return combined;
-  }, [searchResults, recommendations]);
+    
+    return data.results.map((r: any) => ({
+      id: r.id,
+      title: r.name,
+      artist: r.artist_name,
+      album: r.album_name,
+      art: r.image || r.album_image,
+      src: r.audio,
+      duration: r.duration,
+      genre: r.musicinfo?.tags?.genres?.[0] || 'Unknown',
+      link: r.shareurl
+    }));
+  };
 
-  const handleSearch = async (query: string) => {
-    setSearchState('loading');
-    setSearchQuery(query);
-    setSelectedGenre(null);
-    setErrorMessage('');
-    setIsPlaying(false);
+  // Get recommendations
+  const getRecommendations = (seedTracks: Track[], allTracks: Track[], count = 10): Track[] => {
+    if (seedTracks.length === 0) return [];
+    
+    const seedGenres = new Set(seedTracks.map(t => t.genre));
+    const seedArtists = new Set(seedTracks.map(t => t.artist.toLowerCase()));
+    const seedIds = new Set(seedTracks.map(t => t.id));
+    
+    const available = allTracks.filter(t => !seedIds.has(t.id));
+    
+    if (available.length === 0) {
+      return [...seedTracks].sort(() => Math.random() - 0.5).slice(0, count);
+    }
+    
+    const scored = available.map(track => {
+      let score = 0;
+      if (seedGenres.has(track.genre)) score += 3;
+      if (seedArtists.has(track.artist.toLowerCase())) score += 5;
+      score += Math.random() * 2;
+      return { track, score };
+    });
+    
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, Math.min(count, scored.length)).map(s => s.track);
+  };
 
+  // Do search
+  const doSearch = async (searchQuery?: string) => {
+    const q = searchQuery || query.trim();
+    if (!q) return;
+    
+    if (!apiKey) {
+      setStatus('Please enter your Jamendo API key first');
+      setShowApiKeyInput(true);
+      return;
+    }
+    
+    setIsLoading(true);
+    setStatus('Searching...');
+    setQuery(q);
+    
     try {
-      const tracks = await searchTracks(query, 50);
-      
-      if (tracks.length === 0) {
-        setSearchState('error');
-        setErrorMessage(`No results found for "${query}". Try a different search term.`);
-        setSearchResults([]);
-        setRecommendations([]);
-        return;
-      }
-
-      setSearchResults(tracks);
-      setSearchState('success');
-
-      // Get recommendations based on search results
-      const seedTracks = tracks.slice(0, Math.min(5, tracks.length));
-      const recs = getRecommendations(seedTracks, tracks, 10);
+      const results = await searchJamendo(q);
+      setTracks(results);
+      const recs = getRecommendations(results.slice(0, 5), results, 10);
       setRecommendations(recs);
-    } catch (error) {
-      setSearchState('error');
-      setErrorMessage('Something went wrong. Please try again.');
-      setSearchResults([]);
+      setStatus(`${results.length} songs found`);
+    } catch (e: any) {
+      setStatus(e.message);
+      setTracks([]);
       setRecommendations([]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleGenreSelect = async (genre: string) => {
-    setSelectedGenre(genre);
-    setSearchState('loading');
-    setSearchQuery(genre);
-    setErrorMessage('');
-    setIsPlaying(false);
-
-    try {
-      const tracks = await getGenreTracks(genre, 50);
-      
-      if (tracks.length === 0) {
-        setSearchState('error');
-        setErrorMessage(`No tracks found for genre "${genre}".`);
-        setSearchResults([]);
-        setRecommendations([]);
-        return;
-      }
-
-      setSearchResults(tracks);
-      setSearchState('success');
-
-      const seedTracks = tracks.slice(0, Math.min(5, tracks.length));
-      const recs = getRecommendations(seedTracks, tracks, 10);
-      setRecommendations(recs);
-    } catch (error) {
-      setSearchState('error');
-      setErrorMessage('Something went wrong. Please try again.');
-      setSearchResults([]);
-      setRecommendations([]);
-    }
-  };
-
-  // Use functional updates to avoid stale closures
-  const handlePlay = useCallback((track: Track) => {
-    setCurrentTrack(prev => {
-      if (prev?.trackId === track.trackId) {
-        // Toggle play/pause for same track
-        setIsPlaying(playing => !playing);
-        return prev;
-      }
-      // Play new track
-      setIsPlaying(true);
-      return track;
-    });
-  }, []);
-
-  const handlePlayPause = useCallback(() => {
-    setIsPlaying(prev => !prev);
-  }, []);
-
-  const handleNext = useCallback(() => {
-    setCurrentTrack(prev => {
-      if (!prev || allTracks.length === 0) return prev;
-      
-      const currentIndex = allTracks.findIndex(t => t.trackId === prev.trackId);
-      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % allTracks.length;
-      setIsPlaying(true);
-      return allTracks[nextIndex];
-    });
-  }, [allTracks]);
-
-  const handlePrevious = useCallback(() => {
-    setCurrentTrack(prev => {
-      if (!prev || allTracks.length === 0) return prev;
-      
-      const currentIndex = allTracks.findIndex(t => t.trackId === prev.trackId);
-      const prevIndex = currentIndex <= 0 ? allTracks.length - 1 : currentIndex - 1;
-      setIsPlaying(true);
-      return allTracks[prevIndex];
-    });
-  }, [allTracks]);
-
-  const handleAddToQueue = useCallback((track: Track) => {
-    setQueue(prev => {
-      if (prev.some(t => t.trackId === track.trackId)) return prev;
-      return [...prev, track];
-    });
-  }, []);
-
-  const handleRemoveFromQueue = useCallback((index: number) => {
-    setQueue(prev => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const handlePlayFromQueue = useCallback((track: Track) => {
+  // Play track
+  const playTrack = useCallback((list: 'tracks' | 'recommendations', index: number) => {
+    const listData = list === 'recommendations' ? recommendations : tracks;
+    if (index < 0 || index >= listData.length) return;
+    
+    const track = listData[index];
+    setCurrentList(list);
+    setCurrentIndex(index);
     setCurrentTrack(track);
+    
+    if (audioRef.current) {
+      audioRef.current.src = track.src;
+      audioRef.current.play().catch(() => setStatus('Playback failed'));
+    }
     setIsPlaying(true);
-  }, []);
+  }, [tracks, recommendations]);
 
-  const handleLogoClick = useCallback(() => {
-    setSearchState('idle');
-    setSearchResults([]);
-    setRecommendations([]);
-    setCurrentTrack(null);
-    setIsPlaying(false);
-    setQueue([]);
-    setSearchQuery('');
-    setSelectedGenre(null);
-    setErrorMessage('');
-  }, []);
+  // Toggle play/pause
+  const togglePlay = () => {
+    if (!currentTrack) {
+      if (tracks.length > 0) playTrack('tracks', 0);
+      return;
+    }
+    
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play().catch(() => {});
+      }
+    }
+    setIsPlaying(!isPlaying);
+  };
 
-  const hasResults = searchState === 'success' && searchResults.length > 0;
+  // Next track
+  const nextTrack = () => {
+    const list = currentList === 'recommendations' ? recommendations : tracks;
+    if (list.length === 0) return;
+    const nextIndex = (currentIndex + 1) % list.length;
+    playTrack(currentList, nextIndex);
+  };
+
+  // Previous track
+  const prevTrack = () => {
+    const list = currentList === 'recommendations' ? recommendations : tracks;
+    if (list.length === 0) return;
+    const prevIndex = currentIndex <= 0 ? list.length - 1 : currentIndex - 1;
+    playTrack(currentList, prevIndex);
+  };
+
+  // Save API key
+  const saveApiKey = () => {
+    const key = apiKeyInput.trim();
+    if (key) {
+      localStorage.setItem('jamendo_key', key);
+      setApiKey(key);
+      setShowApiKeyInput(false);
+      setStatus('API key saved! You can now search for music.');
+    } else {
+      setStatus('Please enter a valid API key');
+    }
+  };
+
+  // Audio event handlers
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onEnded = () => nextTrack();
+    const onLoadedMetadata = () => setDuration(audio.duration);
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('timeupdate', onTimeUpdate);
+
+    return () => {
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+    };
+  }, [currentIndex, currentList]);
+
+  // Volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  // Seek
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (audioRef.current && duration) {
+      audioRef.current.currentTime = (parseFloat(e.target.value) / 100) * duration;
+    }
+  };
+
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="min-h-screen bg-[#121212] pb-24">
-      <Header onLogoClick={handleLogoClick} />
-      
-      <HeroSection>
-        <SearchBar onSearch={handleSearch} isLoading={searchState === 'loading'} />
+    <div style={{ minHeight: '100vh', background: '#121212', color: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', paddingBottom: '100px' }}>
+      {/* Header */}
+      <header style={{ background: 'linear-gradient(180deg, #1a1a2e 0%, #121212 100%)', padding: '60px 20px 40px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '3rem', fontWeight: 900, marginBottom: '8px', background: 'linear-gradient(135deg, #1db954, #1ed760)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+          🎵 SoundFinder
+        </h1>
+        <p style={{ color: '#b3b3b3', fontSize: '1.1rem', marginBottom: '30px' }}>
+          Discover and play full songs - powered by Jamendo
+        </p>
         
-        <div className="mt-10">
-          <GenreExplorer onSelectGenre={handleGenreSelect} selectedGenre={selectedGenre} />
+        {/* Search */}
+        <div style={{ maxWidth: '600px', margin: '0 auto 30px', position: 'relative' }}>
+          <span style={{ position: 'absolute', left: '20px', top: '50%', transform: 'translateY(-50%)', color: '#b3b3b3', fontSize: '18px' }}>🔍</span>
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && doSearch()}
+            placeholder="Search for songs, artists, or genres..."
+            style={{ width: '100%', padding: '16px 140px 16px 50px', borderRadius: '50px', border: '1px solid #282828', background: '#282828', color: '#fff', fontSize: '16px', outline: 'none' }}
+          />
+          <button
+            onClick={() => doSearch()}
+            disabled={isLoading || !query.trim()}
+            style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', padding: '10px 24px', border: 'none', borderRadius: '50px', background: isLoading || !query.trim() ? '#282828' : '#1db954', color: isLoading || !query.trim() ? '#b3b3b3' : '#000', fontWeight: 600, cursor: isLoading || !query.trim() ? 'not-allowed' : 'pointer', fontSize: '14px' }}
+          >
+            {isLoading ? 'Searching...' : 'Find Music'}
+          </button>
         </div>
-      </HeroSection>
+
+        {/* Quick picks */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+          <span style={{ color: '#b3b3b3', fontSize: '13px', alignSelf: 'center' }}>Try:</span>
+          {['rock', 'pop', 'electronic', 'jazz', 'hip hop', 'classical'].map(genre => (
+            <button
+              key={genre}
+              onClick={() => { setQuery(genre); doSearch(genre); }}
+              style={{ padding: '8px 16px', background: '#282828', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '50px', color: '#b3b3b3', fontSize: '13px', cursor: 'pointer' }}
+            >
+              {genre}
+            </button>
+          ))}
+        </div>
+      </header>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Loading state */}
-        {searchState === 'loading' && (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="relative">
-              <div className="w-16 h-16 border-4 border-[#282828] rounded-full"></div>
-              <div className="w-16 h-16 border-4 border-transparent border-t-[#1DB954] rounded-full absolute inset-0 animate-spin"></div>
-            </div>
-            <p className="mt-4 text-[#B3B3B3] text-sm">Finding the perfect songs for you...</p>
-          </div>
-        )}
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 20px' }}>
+        {/* API Key notice */}
+        <div style={{ background: '#282828', border: '1px solid rgba(29, 185, 84, 0.2)', borderRadius: '12px', padding: '16px', margin: '20px auto', maxWidth: '600px', textAlign: 'center' }}>
+          <strong>🎶 Full Songs Available!</strong><br />
+          <small style={{ color: '#b3b3b3' }}>
+            This player uses <a href="https://www.jamendo.com" target="_blank" style={{ color: '#1db954' }}>Jamendo</a> - a platform for independent artists sharing music under Creative Commons licenses. Get your free API key at <a href="https://devportal.jamendo.com/signup" target="_blank" style={{ color: '#1db954' }}>devportal.jamendo.com</a>
+          </small>
+        </div>
 
-        {/* Error state */}
-        {searchState === 'error' && (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4">
-              <i className="fas fa-exclamation-circle text-red-400 text-2xl"></i>
-            </div>
-            <p className="text-[#B3B3B3] text-center max-w-md">{errorMessage}</p>
+        {/* API Key input */}
+        {showApiKeyInput && (
+          <div style={{ maxWidth: '600px', margin: '0 auto 30px' }}>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              placeholder="Enter your Jamendo client_id"
+              style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1px solid #282828', background: '#181818', color: '#fff', fontSize: '15px', marginBottom: '10px' }}
+            />
             <button
-              onClick={handleLogoClick}
-              className="mt-4 px-6 py-2 bg-[#282828] hover:bg-[#3E3E3E] text-white rounded-full text-sm transition-all"
+              onClick={saveApiKey}
+              style={{ width: '100%', padding: '12px', border: 'none', borderRadius: '10px', background: '#1db954', color: '#000', fontWeight: 600, cursor: 'pointer', fontSize: '14px' }}
             >
-              Go Back Home
+              Save API Key
             </button>
           </div>
         )}
 
-        {/* Results */}
-        {hasResults && (
-          <div className="py-6">
-            {/* Recommendations section */}
-            {recommendations.length > 0 && (
-              <section className="mb-10">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-10 h-10 bg-gradient-to-br from-[#1DB954] to-green-700 rounded-lg flex items-center justify-center">
-                    <i className="fas fa-magic text-white"></i>
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white">Recommended For You</h2>
-                    <p className="text-xs text-[#B3B3B3]">Based on "{searchQuery}"</p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {recommendations.map((track, index) => (
-                    <div
-                      key={`rec-${track.trackId}-${index}`}
-                      className="group bg-[#181818] hover:bg-[#282828] rounded-lg p-4 transition-all card-hover cursor-pointer animate-fade-in-up"
-                      style={{ animationDelay: `${index * 80}ms` }}
-                      onClick={() => handlePlay(track)}
-                    >
-                      <div className="relative mb-3">
-                        <img
-                          src={track.artworkUrl100.replace('100x100', '300x300')}
-                          alt={track.collectionName}
-                          className="w-full aspect-square rounded-md object-cover shadow-lg"
-                          loading="lazy"
-                        />
-                        <div className="absolute inset-0 rounded-md bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
-                          <div className="w-10 h-10 bg-[#1DB954] rounded-full flex items-center justify-center shadow-xl opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all hover:scale-105 hover:bg-[#1ED760]">
-                            <i className="fas fa-play text-black text-sm ml-0.5"></i>
-                          </div>
-                        </div>
-                        {currentTrack?.trackId === track.trackId && isPlaying && (
-                          <div className="absolute top-2 right-2">
-                            <div className="w-6 h-6 bg-[#1DB954] rounded-full flex items-center justify-center animate-pulse-glow">
-                              <i className="fas fa-music text-black text-[8px]"></i>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <p className={`text-sm font-semibold truncate ${currentTrack?.trackId === track.trackId ? 'text-[#1DB954]' : 'text-white'}`}>
-                        {track.trackName}
-                      </p>
-                      <p className="text-xs text-[#B3B3B3] truncate mt-1">{track.artistName}</p>
-                      <p className="text-[10px] text-[#6A6A6A] mt-1">{track.primaryGenreName}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* All results */}
-            <section>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-700 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-search text-white"></i>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-white">Search Results</h2>
-                  <p className="text-xs text-[#B3B3B3]">All matches for "{searchQuery}"</p>
-                </div>
-              </div>
-
-              <StatsBar totalResults={searchResults.length} currentTrack={currentTrack} />
-
-              <div className="mt-2">
-                {searchResults.map((track, index) => (
-                  <TrackCard
-                    key={`result-${track.trackId}-${index}`}
-                    track={track}
-                    index={index}
-                    isPlaying={currentTrack?.trackId === track.trackId && isPlaying}
-                    onPlay={handlePlay}
-                    onAddToQueue={handleAddToQueue}
-                  />
-                ))}
-              </div>
-            </section>
-
-            {/* Queue */}
-            <Queue
-              queue={queue}
-              currentTrack={currentTrack}
-              onRemoveFromQueue={handleRemoveFromQueue}
-              onPlayFromQueue={handlePlayFromQueue}
-            />
+        {/* Status */}
+        {status && (
+          <div style={{ textAlign: 'center', color: '#b3b3b3', fontSize: '14px', padding: '20px' }}>
+            {status}
           </div>
         )}
 
-        {/* Empty state */}
-        {searchState === 'idle' && (
-          <div className="py-12">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 max-w-4xl mx-auto">
-              {[
-                { icon: 'fa-guitar', label: 'Rock', color: 'from-red-500 to-orange-500' },
-                { icon: 'fa-microphone', label: 'Pop', color: 'from-pink-500 to-rose-500' },
-                { icon: 'fa-headphones', label: 'Electronic', color: 'from-cyan-500 to-blue-500' },
-                { icon: 'fa-drum', label: 'Hip-Hop', color: 'from-purple-500 to-indigo-500' },
-                { icon: 'fa-music', label: 'Jazz', color: 'from-emerald-500 to-teal-500' },
-                { icon: 'fa-compact-disc', label: 'Classical', color: 'from-slate-400 to-gray-500' },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => handleGenreSelect(item.label)}
-                  className={`bg-gradient-to-br ${item.color} rounded-xl p-4 text-center hover:scale-105 transition-transform shadow-lg`}
+        {/* Loading */}
+        {isLoading && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' }}>
+            <div style={{ width: '40px', height: '40px', border: '4px solid #282828', borderTopColor: '#1db954', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+          </div>
+        )}
+
+        {/* Recommendations */}
+        {!isLoading && recommendations.length > 0 && (
+          <div style={{ marginBottom: '40px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', background: 'linear-gradient(135deg, #1db954, #169c46)' }}>✨</div>
+              <div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>Recommended For You</div>
+                <div style={{ fontSize: '0.75rem', color: '#b3b3b3' }}>Based on "{query}"</div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '20px' }}>
+              {recommendations.map((track, i) => (
+                <div
+                  key={`rec-${track.id}-${i}`}
+                  onClick={() => playTrack('recommendations', i)}
+                  style={{ background: currentList === 'recommendations' && currentIndex === i ? 'rgba(29, 185, 84, 0.1)' : '#1f1f1f', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'all 0.3s', position: 'relative', outline: currentList === 'recommendations' && currentIndex === i ? '2px solid #1db954' : 'none' }}
                 >
-                  <i className={`fas ${item.icon} text-2xl text-white mb-2`}></i>
-                  <p className="text-white text-sm font-bold">{item.label}</p>
-                </button>
+                  <img src={track.art} alt="" style={{ width: '100%', aspectRatio: '1', borderRadius: '8px', objectFit: 'cover', background: '#2a2a3a', marginBottom: '12px' }} />
+                  <div style={{ fontWeight: 600, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px', color: currentList === 'recommendations' && currentIndex === i ? '#1db954' : '#fff' }}>
+                    {track.title}
+                  </div>
+                  <div style={{ color: '#b3b3b3', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {track.artist}
+                  </div>
+                  <div style={{ display: 'inline-block', marginTop: '8px', padding: '4px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', fontSize: '10px', color: '#b3b3b3' }}>
+                    {track.genre}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
         )}
-      </main>
+
+        {/* Search Results */}
+        {!isLoading && tracks.length > 0 && (
+          <div style={{ marginBottom: '40px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}>🔍</div>
+              <div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>Search Results</div>
+                <div style={{ fontSize: '0.75rem', color: '#b3b3b3' }}>All matches for "{query}"</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {tracks.map((track, i) => (
+                <div
+                  key={`track-${track.id}-${i}`}
+                  onClick={() => playTrack('tracks', i)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px', borderRadius: '8px', cursor: 'pointer', background: currentList === 'tracks' && currentIndex === i ? 'rgba(29, 185, 84, 0.1)' : 'transparent' }}
+                >
+                  <div style={{ width: '30px', textAlign: 'center', color: currentList === 'tracks' && currentIndex === i ? '#1db954' : '#b3b3b3', fontSize: '14px' }}>
+                    {currentList === 'tracks' && currentIndex === i ? '🔊' : i + 1}
+                  </div>
+                  <img src={track.art} alt="" style={{ width: '48px', height: '48px', borderRadius: '6px', objectFit: 'cover', background: '#2a2a3a' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: currentList === 'tracks' && currentIndex === i ? '#1db954' : '#fff' }}>
+                      {track.title}
+                    </div>
+                    <div style={{ color: '#b3b3b3', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {track.artist}
+                    </div>
+                  </div>
+                  <div style={{ padding: '4px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', fontSize: '11px', color: '#b3b3b3' }}>
+                    {track.genre}
+                  </div>
+                  <div style={{ color: '#b3b3b3', fontSize: '12px', width: '50px', textAlign: 'right' }}>
+                    {fmt(track.duration)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Player */}
-      <Player
-        track={currentTrack}
-        isPlaying={isPlaying}
-        onPlayPause={handlePlayPause}
-        onNext={handleNext}
-        onPrevious={handlePrevious}
-      />
+      {currentTrack && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, background: '#181818', borderTop: '1px solid #282828', padding: '12px 20px', display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '20px', alignItems: 'center', zIndex: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+            <img src={currentTrack.art} alt="" style={{ width: '56px', height: '56px', borderRadius: '8px', objectFit: 'cover' }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTrack.title}</div>
+              <div style={{ color: '#b3b3b3', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTrack.artist}</div>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <button onClick={prevTrack} style={{ background: 'transparent', border: 'none', color: '#b3b3b3', cursor: 'pointer', fontSize: '16px', padding: '8px 12px' }}>⏮</button>
+              <button onClick={togglePlay} style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'white', color: '#000', border: 'none', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {isPlaying ? '⏸' : '▶'}
+              </button>
+              <button onClick={nextTrack} style={{ background: 'transparent', border: 'none', color: '#b3b3b3', cursor: 'pointer', fontSize: '16px', padding: '8px 12px' }}>⏭</button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', fontSize: '12px', color: '#b3b3b3' }}>
+              <span>{fmt(currentTime)}</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={progressPercent}
+                onChange={handleSeek}
+                style={{ flex: 1, height: '4px', borderRadius: '2px', background: `linear-gradient(to right, #1db954 ${progressPercent}%, #4d4d4d ${progressPercent}%)`, outline: 'none' }}
+              />
+              <span>{fmt(duration)}</span>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+            🔊 <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={e => setVolume(parseFloat(e.target.value))}
+              style={{ width: '100px', height: '4px', borderRadius: '2px', background: `linear-gradient(to right, #1db954 ${volume * 100}%, #4d4d4d ${volume * 100}%)`, outline: 'none' }}
+            />
+          </div>
+        </div>
+      )}
+
+      <audio ref={audioRef} preload="metadata" />
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+          h1 { font-size: 2rem !important; }
+        }
+      `}</style>
     </div>
   );
 }

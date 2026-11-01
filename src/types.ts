@@ -1,15 +1,11 @@
 export interface Track {
-  trackId: number;
-  trackName: string;
-  artistName: string;
-  collectionName: string;
-  artworkUrl100: string;
-  previewUrl: string;
-  trackTimeMillis: number;
-  primaryGenreName: string;
-  releaseDate: string;
-  trackPrice?: number;
-  collectionArtistName?: string;
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  art: string;
+  src: string;
+  duration: number;
+  genre: string;
+  link: string;
 }
-
-export type SearchState = 'idle' | 'loading' | 'success' | 'error';

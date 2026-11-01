@@ -19,10 +19,9 @@ const GenreBubble: React.FC<GenreBubbleProps> = ({ genre, isSelected, onClick })
     'Jazz': 'from-emerald-500 to-teal-600',
     'Classical': 'from-slate-400 to-gray-500',
     'Alternative': 'from-green-500 to-emerald-600',
-    'default': 'from-[#1DB954] to-green-600',
   };
 
-  const gradient = colors[genre] || colors['default'];
+  const gradient = colors[genre] || 'from-[#1DB954] to-green-600';
 
   return (
     <button
@@ -81,15 +80,15 @@ const HeroSection: React.FC<HeroSectionProps> = ({ children }) => {
       <div className="absolute top-20 right-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl"></div>
       <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl"></div>
       
-      <div className="relative z-10 pt-32 pb-16 px-4">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white mb-4 tracking-tight">
+      <div className="relative z-10 pt-28 sm:pt-32 pb-12 sm:pb-16 px-4">
+        <div className="text-center mb-8 sm:mb-10">
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white mb-4 tracking-tight">
             Discover Your Next
             <span className="block bg-gradient-to-r from-[#1DB954] to-[#1ED760] bg-clip-text text-transparent">
               Favorite Song
             </span>
           </h1>
-          <p className="text-[#B3B3B3] text-lg max-w-xl mx-auto">
+          <p className="text-[#B3B3B3] text-base sm:text-lg max-w-xl mx-auto">
             Search for any artist or song, and we'll find personalized recommendations just for you.
           </p>
         </div>
@@ -112,7 +111,7 @@ const StatsBar: React.FC<StatsBarProps> = ({ totalResults, currentTrack }) => {
           <span className="text-white font-semibold">{totalResults}</span> songs found
         </span>
         {currentTrack && (
-          <span className="text-xs text-[#1DB954] flex items-center gap-1">
+          <span className="hidden sm:inline text-xs text-[#1DB954] items-center gap-1">
             <i className="fas fa-music text-[10px]"></i>
             Now: {currentTrack.trackName}
           </span>

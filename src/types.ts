@@ -12,9 +12,4 @@ export interface Track {
   collectionArtistName?: string;
 }
 
-export interface Recommendation {
-  track: Track;
-  matchReason: string;
-}
-
 export type SearchState = 'idle' | 'loading' | 'success' | 'error';

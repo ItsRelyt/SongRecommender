@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Track } from '../types';
 
 interface PlayerProps {
@@ -12,63 +12,91 @@ interface PlayerProps {
 const Player: React.FC<PlayerProps> = ({ track, isPlaying, onPlayPause, onNext, onPrevious }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(30);
   const [volume, setVolume] = useState(0.7);
+  const onNextRef = useRef(onNext);
 
+  // Keep the ref up to date
+  useEffect(() => {
+    onNextRef.current = onNext;
+  }, [onNext]);
+
+  // Handle track change - load new audio
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !track?.previewUrl) return;
 
-    const updateTime = () => setCurrentTime(audio.currentTime);
-    const updateDuration = () => setDuration(audio.duration);
+    // Reset and load new track
+    audio.pause();
+    audio.src = track.previewUrl;
+    audio.volume = volume;
+    audio.load();
 
-    audio.addEventListener('timeupdate', updateTime);
-    audio.addEventListener('loadedmetadata', updateDuration);
-    audio.addEventListener('ended', onNext);
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration);
+      setCurrentTime(0);
+    };
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+
+    const handleEnded = () => {
+      onNextRef.current();
+    };
+
+    const handleError = () => {
+      // Silently handle audio errors (some previews may not be available)
+      console.warn('Audio preview not available for this track');
+    };
+
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+
+    // Auto-play if isPlaying
+    if (isPlaying) {
+      audio.play().catch(() => {
+        // Autoplay might be blocked by browser
+      });
+    }
 
     return () => {
-      audio.removeEventListener('timeupdate', updateTime);
-      audio.removeEventListener('loadedmetadata', updateDuration);
-      audio.removeEventListener('ended', onNext);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
     };
-  }, [track, onNext]);
+  }, [track?.previewUrl]); // Only re-run when the preview URL changes
 
+  // Handle play/pause
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
-
-    if (track?.previewUrl) {
-      audio.src = track.previewUrl;
-      audio.volume = volume;
-      if (isPlaying) {
-        audio.play().catch(() => {});
-      }
-    }
-  }, [track]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !audio.src) return;
 
     if (isPlaying) {
-      audio.play().catch(() => {});
+      audio.play().catch(() => {
+        // Autoplay might be blocked
+      });
     } else {
       audio.pause();
     }
   }, [isPlaying]);
 
+  // Handle volume changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
   }, [volume]);
 
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return '0:00';
+  const formatTime = useCallback((time: number) => {
+    if (isNaN(time) || time < 0) return '0:00';
     const mins = Math.floor(time / 60);
     const secs = Math.floor(time % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
@@ -83,6 +111,8 @@ const Player: React.FC<PlayerProps> = ({ track, isPlaying, onPlayPause, onNext, 
   const getArtworkUrl = (url: string, size: number = 300) => {
     return url.replace('100x100', `${size}x${size}`);
   };
+
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#181818] border-t border-white/10 backdrop-blur-xl">
@@ -111,12 +141,14 @@ const Player: React.FC<PlayerProps> = ({ track, isPlaying, onPlayPause, onNext, 
               <button
                 onClick={onPrevious}
                 className="text-[#B3B3B3] hover:text-white transition-colors"
+                aria-label="Previous track"
               >
                 <i className="fas fa-step-backward"></i>
               </button>
               <button
                 onClick={onPlayPause}
                 className="w-9 h-9 bg-white rounded-full flex items-center justify-center hover:scale-105 transition-transform"
+                aria-label={isPlaying ? 'Pause' : 'Play'}
               >
                 {isPlaying ? (
                   <i className="fas fa-pause text-black text-sm"></i>
@@ -127,6 +159,7 @@ const Player: React.FC<PlayerProps> = ({ track, isPlaying, onPlayPause, onNext, 
               <button
                 onClick={onNext}
                 className="text-[#B3B3B3] hover:text-white transition-colors"
+                aria-label="Next track"
               >
                 <i className="fas fa-step-forward"></i>
               </button>
@@ -134,19 +167,20 @@ const Player: React.FC<PlayerProps> = ({ track, isPlaying, onPlayPause, onNext, 
             
             {/* Progress bar */}
             <div className="w-full flex items-center gap-2">
-              <span className="text-[10px] text-[#B3B3B3] w-8 text-right">{formatTime(currentTime)}</span>
+              <span className="text-[10px] text-[#B3B3B3] w-8 text-right tabular-nums">{formatTime(currentTime)}</span>
               <input
                 type="range"
                 min="0"
                 max={duration || 30}
+                step="0.1"
                 value={currentTime}
                 onChange={handleSeek}
                 className="flex-1 h-1 cursor-pointer"
                 style={{
-                  background: `linear-gradient(to right, #1DB954 ${(currentTime / (duration || 30)) * 100}%, #4d4d4d ${(currentTime / (duration || 30)) * 100}%)`
+                  background: `linear-gradient(to right, #1DB954 ${progressPercent}%, #4d4d4d ${progressPercent}%)`
                 }}
               />
-              <span className="text-[10px] text-[#B3B3B3] w-8">0:30</span>
+              <span className="text-[10px] text-[#B3B3B3] w-8 tabular-nums">{formatTime(duration)}</span>
             </div>
           </div>
 

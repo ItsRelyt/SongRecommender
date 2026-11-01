@@ -15,14 +15,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
+    if (query.trim() && !isLoading) {
       onSearch(query.trim());
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSubmit(e);
     }
   };
 
@@ -40,7 +34,6 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, isLoading }) => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
             placeholder="Search for a song, artist, or genre..."
             className="w-full pl-14 pr-32 py-4 bg-[#282828] border border-white/10 rounded-full text-white text-lg placeholder-[#6A6A6A] focus:outline-none focus:border-[#1DB954] focus:ring-2 focus:ring-[#1DB954]/20 transition-all"
           />

@@ -1,15 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-
 @import "tailwindcss";
-
-:root {
-  --spotify-green: #1DB954;
-  --spotify-green-light: #1ED760;
-  --spotify-black: #121212;
-  --spotify-dark: #181818;
-  --spotify-gray: #282828;
-  --spotify-light-gray: #B3B3B3;
-}
 
 * {
   margin: 0;
@@ -18,8 +7,8 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: var(--spotify-black);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #121212;
   color: white;
   overflow-x: hidden;
 }
@@ -30,11 +19,11 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--spotify-black);
+  background: #121212;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--spotify-gray);
+  background: #282828;
   border-radius: 4px;
 }
 
@@ -107,11 +96,6 @@ body {
 
 .wave-bar:nth-child(4) {
   animation-delay: 0.3s;
-}
-
-/* Gradient backgrounds */
-.gradient-bg {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
 }
 
 .card-hover {
